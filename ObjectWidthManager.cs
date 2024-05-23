@@ -24,6 +24,8 @@ public class ObjectWidthManager : MonoBehaviour
     [SerializeField] private RectTransform _cursorTransform;
     [SerializeField] private bool onlyMoveOnGrid = false;
     [SerializeField] private Vector3 offset;
+    [SerializeField] private bool SmoothMovement = true;
+    [SerializeField, Range(0,20)] private float _smoothMovementAmount = 0;
     private int cellSize;
     public GameObject imagePrefab;
 
@@ -43,12 +45,21 @@ public class ObjectWidthManager : MonoBehaviour
     [Header("Testing")]
     public Item item1, item2;
 
+    private Vector3 lastPos;
+    private bool IsMoving;
+    private Canvas canvas;
     //Functions
 
     private void Start() 
     {
         gridManager = GetComponent<GridManager>();
         _cursorTransform.sizeDelta = objectSize;
+        lastPos = _cursorTransform.position;
+        canvas = GetComponentInChildren<Canvas>();
+        foreach (var tile in tiles)
+        {
+            tile.GetComponent<RawImage>().color = _tileEmptyColor;
+        }
     }
 
     private void Update() 
@@ -61,8 +72,16 @@ public class ObjectWidthManager : MonoBehaviour
         }
 
         if(!activeItem) return;
-        Vector2 objectPosition = new Vector3(Input.mousePosition.x + offset.x, Input.mousePosition.y + offset.y, Input.mousePosition.z + offset.z);
-        _cursorTransform.position = GetMagnetizedPosition(Input.mousePosition);
+        if(SmoothMovement)
+        {
+        float canvasScaleFactor = canvas.scaleFactor == 1 ? canvas.scaleFactor - 0.5f : canvas.scaleFactor / 2;
+
+        _cursorTransform.position = Vector3.MoveTowards(_cursorTransform.position, GetMagnetizedPosition(Input.mousePosition), _smoothMovementAmount * canvasScaleFactor);
+        }
+        else
+        {
+           _cursorTransform.position = GetMagnetizedPosition(Input.mousePosition);
+        }
         CheckTilesUnderCursor();
         UpdateTileHover();
 
@@ -72,7 +91,6 @@ public class ObjectWidthManager : MonoBehaviour
     void LateUpdate()
     {
         cellSize = (int)GetComponentInChildren<GridLayoutGroup>().cellSize.x;
-
     }
 
     void Instantiate()
@@ -145,15 +163,11 @@ public class ObjectWidthManager : MonoBehaviour
                     //Vectors2
                     firstTileChecked = tile.Key;
                     _firstTile = new Vector2(_column, _row);
-
                     _corners[0] = _firstTile;
                     _corners[1] = new Vector2(_lastColumn,_firstTile.y);
                     _corners[2] = new Vector2(_firstTile.x, _lastRow);
                     _corners[3] = new Vector2(_lastColumn, _lastRow);
-                    print( _corners[0]);
-                    print( _corners[1]);
-                    print( _corners[2]);
-                    print( _corners[3]);
+
                     if(size.y * size.x == 1)
                     {
                         _corners[0] = _firstTile;
@@ -193,7 +207,6 @@ public class ObjectWidthManager : MonoBehaviour
         }
         if(_canBePlaced)
         {
-            print("entra");
             var item = Instantiate(imagePrefab ,GetCenterPositionOfTiles(_corners[0], _corners[1], _corners[2], _corners[3]), Quaternion.identity);
             InstantiateItemIcon(item, _corners[0], _corners[3]);
         }
@@ -219,9 +232,9 @@ public class ObjectWidthManager : MonoBehaviour
             gridManager.AddItem(activeItem, positions);
             var image = Instantiate(imagePrefab);
             RectTransform prefabTransform = image.GetComponent<RectTransform>();
-            prefabTransform.parent = _inventory;
+            prefabTransform.SetParent(_inventory);
             prefabTransform.position = _cursorTransform.position;
-            Vector2 itemSize = VisualItemSize(activeItem._size);
+            Vector2 itemSize = VisualItemSize(activeItem._size, true);
             prefabTransform.sizeDelta = new Vector2(itemSize.x * 2, itemSize.y * 2);;
             image.GetComponent<Image>().sprite = activeItem._itemIcon;
             _cursorTransform.GetComponent<Image>().color = Color.clear;
@@ -260,7 +273,7 @@ public class ObjectWidthManager : MonoBehaviour
     /// </summary>
     /// <param name="item"></param>
     /// <param name="positions"></param>
-    public void MoveItem(Item item, Vector2[] positions)
+    public void MoveItem(Item item, Vector2[] positions, Vector3 position)
     {
         lastItemPositionInGrid = new Vector2[positions.Length];
         for (int i = 0; i < positions.Length; i++)
@@ -268,6 +281,7 @@ public class ObjectWidthManager : MonoBehaviour
             lastItemPositionInGrid[i].y = positions[i].x;
             lastItemPositionInGrid[i].x = positions[i].y;
         }
+        _cursorTransform.position = position;
         activeItem = item;
         UpdateItemIcon(item);
         isDragging = true;
@@ -358,13 +372,13 @@ public class ObjectWidthManager : MonoBehaviour
     void InstantiateItemIcon(GameObject item, Vector2 firstTile, Vector2 lastTile)
     {
         // Posiciona el item y le añade la imagen
-        item.transform.parent = _inventory;
+        item.transform.SetParent(_inventory);
         item.GetComponent<Image>().sprite = activeItem._itemIcon;
         Vector2[] positions = InsertPositions(firstTile, lastTile);
         gridManager.AddItem(activeItem, positions);
         item.GetComponent<ItemBehaviour>().item = activeItem;
         item.GetComponent<ItemBehaviour>().pos = positions;
-        Vector2 itemSize = VisualItemSize(activeItem._size);
+        Vector2 itemSize = VisualItemSize(activeItem._size, true);
         item.GetComponent<RectTransform>().sizeDelta = new Vector2(itemSize.x * 2, itemSize.y * 2);
         _cursorTransform.GetComponent<Image>().color = Color.clear;
         activeItem = null;
@@ -419,10 +433,13 @@ public class ObjectWidthManager : MonoBehaviour
         Vector3[] corners = new Vector3[4];
         tile.GetWorldCorners(corners);
 
-        Rect cursorRect = new Rect(_cursorTransform.position.x - detectionSize.x, 
-                                   _cursorTransform.position.y - detectionSize.y, 
-                                   detectionSize.x * 2, 
-                                   detectionSize.y * 2);
+        // Depending of canvasScaleFactor it changes everything
+        float canvasScaleFactor = canvas.scaleFactor == 1 ? canvas.scaleFactor - 0.5f : canvas.scaleFactor / 2;
+
+        Rect cursorRect = new Rect(_cursorTransform.position.x - detectionSize.x * canvasScaleFactor, 
+                                   _cursorTransform.position.y - detectionSize.y * canvasScaleFactor, 
+                                   detectionSize.x * 2 * canvasScaleFactor, 
+                                   detectionSize.y * 2 * canvasScaleFactor);
 
 
 
@@ -485,7 +502,7 @@ public class ObjectWidthManager : MonoBehaviour
 
         // Changes the color of the image while moving
         _cursorTransform.GetComponent<Image>().color = _imageDragColor;
-        _cursorTransform.sizeDelta = VisualItemSize(activeItem._size);
+        _cursorTransform.sizeDelta = VisualItemSize(activeItem._size, false);
 
         // Gets the grid dimensions
         float cellWidth = grid.cellSize.x + grid.spacing.x;
@@ -552,13 +569,23 @@ public class ObjectWidthManager : MonoBehaviour
     /// </summary>
     /// <param name="size"></param>
     /// <returns></returns>
-    Vector2 VisualItemSize(Vector2 size)
+    Vector2 VisualItemSize(Vector2 size, bool useCanvasScaleFactor)
     {
-        int width = (int)size.x * cellSize;
-        int height = (int)size.y * cellSize;
-        int widthPercentage = (10 * width) / 100;
-        int heightPercentage = (10 * height) / 100;
-        return new Vector2(width + widthPercentage, height + heightPercentage);
+        int width = (int)size.x == 1 ? 1 * cellSize : (int)size.x * cellSize;
+        int height = (int)size.y == 1 ? 1 * cellSize : (int)size.y * cellSize;
+        int widthPercentage = (2 * width) / 100;
+        int heightPercentage = (2 * height) / 100;
+        float canvasScaleFactor =0;
+        if(useCanvasScaleFactor)
+        {
+            canvasScaleFactor = canvas.scaleFactor == 1 ? canvas.scaleFactor - 0.5f : canvas.scaleFactor / 2;
+        }
+        else
+        {
+            canvasScaleFactor = 1;
+
+        }
+        return new Vector2((width - widthPercentage) * canvasScaleFactor, (height - heightPercentage) * canvasScaleFactor);
     }
 
     /// <summary>
@@ -568,7 +595,10 @@ public class ObjectWidthManager : MonoBehaviour
     /// <returns></returns>
     Vector2 ItemSize(Vector2 itemSize)
     {
-        return new Vector2(itemSize.x * cellSize, itemSize.y * cellSize);
+        int width = (int)itemSize.x == 1 ? 1 * cellSize : (int)itemSize.x * cellSize;
+        int height = (int)itemSize.y == 1 ? 1 * cellSize : (int)itemSize.y * cellSize;
+        float canvasScaleFactor = canvas.scaleFactor == 1 ? canvas.scaleFactor - 0.5f : canvas.scaleFactor / 2;
+        return new Vector2(width * canvasScaleFactor, height * canvasScaleFactor);
     }
 
     /// <summary>
@@ -626,22 +656,18 @@ public class ObjectWidthManager : MonoBehaviour
         {
             if(tile.name.Equals("Tile " + _topLeftTile.y + " " + "" + _topLeftTile.x))
             {
-                print("Tile " + _topLeftTile.y + " " + "" + _topLeftTile.x);
                 topLeftTile = tile;
             }
             if(tile.name.Equals("Tile " + _topRightTile.y + " " + "" + _topRightTile.x))
             {
-                print("Tile " + _topRightTile.y + " " + "" + _topRightTile.x);
                 topRightTile = tile;
             }
             if(tile.name.Equals("Tile " + _bottomLeftTile.y + " " + "" + _bottomLeftTile.x))
             {
-                print("Tile " + _bottomLeftTile.y + " " + "" + _bottomLeftTile.x);
                 bottomLeftTile = tile;
             }
             if(tile.name.Equals("Tile " + _bottomRightTile.y + " " + "" + _bottomRightTile.x))
             {
-                print("Tile " + _bottomRightTile.y + " " + "" + _bottomRightTile.x);
                 bottomRightTile = tile;
             }
         }
@@ -665,7 +691,10 @@ public class ObjectWidthManager : MonoBehaviour
         float centerX = (topLeftCorners[0].x + topRightCorners[3].x + bottomLeftCorners[0].x + bottomRightCorners[3].x) / 4;
         float centerY = (topLeftCorners[0].y + topRightCorners[3].y + bottomLeftCorners[0].y + bottomRightCorners[3].y) / 4;
 
-        centerY += cellSize;
+        float canvasScaleFactor = canvas.scaleFactor == 1 ? canvas.scaleFactor - 0.5f : canvas.scaleFactor / 2;
+
+
+        centerY += cellSize * canvasScaleFactor;
 
         // Convert the position of the center into a local point inside the grid
         Vector2 localCenterPoint = grid.GetComponent<RectTransform>().InverseTransformPoint(new Vector3(centerX, centerY, 0));
@@ -718,17 +747,36 @@ public class ObjectWidthManager : MonoBehaviour
                 if (tileImage != null)
                 {
                     tileImage.color = _tileHoverColor;
+
                 }
             }
             else
             {
-                if (tileImage != null)
+                if(_cursorTransform.position == lastPos)
+                {
+                    StartCoroutine(SetToOccupied());
+                }
+                else
+                {
+                    IsMoving = true;
+                    StopAllCoroutines();
+                }
+                lastPos = _cursorTransform.position;
+
+                if(!IsMoving)
                 {
                     tileImage.color = _tileOcuppiedColor;
+
                 }
             }
         }
         
+    }
+
+    IEnumerator SetToOccupied()
+    {
+        yield return new WaitForSeconds(0.05f);
+        IsMoving = false;
     }
 
     ///<summary>

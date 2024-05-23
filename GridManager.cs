@@ -10,6 +10,7 @@ public class GridManager : MonoBehaviour
     //Variables
     [Header("Grid Options")]
     public int _width, _height;
+    public Vector2 spacing;
     [SerializeField] private GameObject _tilePrefab;
     [SerializeField] private Transform _spawnParent;
     [SerializeField, Range(0,5)] private float rowsColumnProportion = 1.5f;
@@ -125,6 +126,8 @@ public class GridManager : MonoBehaviour
                 rows = Mathf.CeilToInt((float) numberOfTiles/ columns);
             }
 
+            //Sets the grid spacing
+            grid.spacing = spacing;
 
             //Size of tile depending of padding and spacing
             float cellWidth = (containerWidth - (grid.padding.left + grid.padding.right)- (grid.spacing.x * (columns - 1))) / columns;
